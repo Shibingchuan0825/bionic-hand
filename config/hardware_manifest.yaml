@@ -1,0 +1,245 @@
+# Authoritative hardware/channel manifest for the first prototype.
+#
+# This file describes the software baseline and the procurement state.  It is
+# deliberately conservative: the initial soft limits are a bench-test window,
+# not measured mechanical limits.  Replace null fields only after measuring the
+# selected actuator and mechanism; do not treat planned axes as built hardware.
+manifest_version: 1
+
+architecture:
+  dof_definition: independent_actuator_axes
+  target_dof_min: 12
+  target_dof_max: 14
+  baseline_active_axes: 12
+  notes: >-
+    The baseline is eleven finger command axes plus wrist_rot.  wrist_pitch and
+    wrist_yaw are reserved expansion axes.  Passive coupled motion is not counted
+    as an independent actuator axis.
+
+controller:
+  type: arduino_compatible
+  board: arduino_uno
+  # Direct PWM: the Servo library bit-bangs the pulse from a Timer1 interrupt and
+  # does not require a hardware-PWM pin, so all 12 axes fit on an Uno
+  # (MAX_SERVOS = 1 timer x 12).  No PCA9685 is needed for the baseline.
+  # Switch to 'pca9685' (DRIVER_MODE 1) only when the board's timers must be
+  # freed, e.g. for a 14-axis build.
+  driver: direct_pwm
+  i2c_address: 0x40
+  pwm_frequency_hz: 50
+  channel_capacity: 16
+
+# Values in each active axis are the single source of truth for channel identity.
+# soft_limits are intentionally only 80--100 degrees until a mechanism is
+# measured.  nominal_limits are the protocol's theoretical 0--180 degree span;
+# --full-range in the diagnostic tool must be an explicit, supervised choice.
+axes:
+  - name: thumb_cmc
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 2
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: thumb_mcp
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 3
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: thumb_ip
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 4
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: index_mcp
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 5
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: index_pip
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 6
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: middle_mcp
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 7
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: middle_pip
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 8
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: ring_mcp
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 9
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: ring_pip
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 10
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: pinky_mcp
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 11
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: pinky_pip
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 12
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: wrist_rot
+    role: active
+    physical_dof_status: planned
+    physical_dof_claimed: false
+    channel: 13
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: not_started
+
+  - name: wrist_pitch
+    role: reserved
+    physical_dof_status: reserved
+    physical_dof_claimed: false
+    channel: 14
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: reserved
+
+  - name: wrist_yaw
+    role: reserved
+    physical_dof_status: reserved
+    physical_dof_claimed: false
+    channel: 15
+    actuator: null
+    actuator_candidate: null
+    transmission: null
+    direction: null
+    neutral_angle: 90
+    soft_limits: {min: 80, max: 100}
+    nominal_limits: {min: 0, max: 180}
+    expected_load: null
+    validation_state: reserved

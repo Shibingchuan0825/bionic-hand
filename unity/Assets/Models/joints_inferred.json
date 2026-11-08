@@ -1,0 +1,355 @@
+{
+  "source": "inferred from RUKA_V2_forURDF.step",
+  "verified": false,
+  "units": "millimetres, hand-local frame (same as hand.json)",
+  "axis_convention": {
+    "finger_flexion": "+X (world) for index/middle/ring/pinky",
+    "evidence": [
+      "knuckle_ring_ext symmetry axis = (0.99,-0.11,0.01)",
+      "knuckle_ring_ext symmetry axis = (1.00,-0.03,0.01)",
+      "knuclke_index_ext symmetry axis = (0.98,0.13,-0.16)",
+      "finger long axis = (0,-0.19,-0.98); dot with X is 0.00-0.14"
+    ],
+    "thumb": "candidate axes only: CMC is a saddle joint (2 DOF, one axis is an approximation); MCP and IP candidates come from principal-axis analysis cross-checked against the perpendicular of the adjacent links"
+  },
+  "positions": "MCP from knuckle rings (high); PIP/DIP from bbox overlap (medium)",
+  "joints": [
+    {
+      "finger": "index",
+      "joint": "mcp",
+      "name": "index_mcp",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        29.5,
+        24.2,
+        129.3
+      ],
+      "basis": "from knuckle ring centre",
+      "confidence": "high",
+      "driven_part_index": 21,
+      "driven_part_name": "MCP",
+      "obj_object_name": "MCP_21",
+      "extended_angle": 179.3,
+      "flexed_angle": 157.6,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "index",
+      "joint": "pip",
+      "name": "index_pip",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        36.0,
+        28.2,
+        168.8
+      ],
+      "basis": "bbox overlap between MCP and PIP",
+      "confidence": "medium",
+      "driven_part_index": 10,
+      "driven_part_name": "PIP",
+      "obj_object_name": "PIP_10",
+      "extended_angle": 180.5,
+      "flexed_angle": 114.6,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "index",
+      "joint": "dip",
+      "name": "index_dip",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        40.2,
+        30.3,
+        194.3
+      ],
+      "basis": "bbox overlap between PIP and Finger - Joint 3",
+      "confidence": "medium",
+      "driven_part_index": 9,
+      "driven_part_name": "Finger - Joint 3",
+      "obj_object_name": "Finger_-_Joint_3_9"
+    },
+    {
+      "finger": "middle",
+      "joint": "mcp",
+      "name": "middle_mcp",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        11.636,
+        27.496,
+        130.3
+      ],
+      "basis": "estimated from MCP part base (no knuckle ring on this finger)",
+      "confidence": "medium",
+      "driven_part_index": 26,
+      "driven_part_name": "MCP",
+      "obj_object_name": "MCP_26",
+      "extended_angle": 179.1,
+      "flexed_angle": 145.6,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "middle",
+      "joint": "pip",
+      "name": "middle_pip",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        12.3,
+        27.1,
+        170.5
+      ],
+      "basis": "bbox overlap between MCP and PIP",
+      "confidence": "medium",
+      "driven_part_index": 20,
+      "driven_part_name": "PIP",
+      "obj_object_name": "PIP_20",
+      "extended_angle": 180.6,
+      "flexed_angle": 111.9,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "middle",
+      "joint": "dip",
+      "name": "middle_dip",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        13.6,
+        24.8,
+        196.0
+      ],
+      "basis": "bbox overlap between PIP and Finger - Joint 3",
+      "confidence": "medium",
+      "driven_part_index": 16,
+      "driven_part_name": "Finger - Joint 3",
+      "obj_object_name": "Finger_-_Joint_3_16"
+    },
+    {
+      "finger": "ring",
+      "joint": "mcp",
+      "name": "ring_mcp",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        -9.4,
+        23.8,
+        130.1
+      ],
+      "basis": "from knuckle ring centre",
+      "confidence": "high",
+      "driven_part_index": 7,
+      "driven_part_name": "MCP",
+      "obj_object_name": "MCP_7",
+      "extended_angle": 180.7,
+      "flexed_angle": 130.5,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "ring",
+      "joint": "pip",
+      "name": "ring_pip",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        -9.1,
+        32.0,
+        169.0
+      ],
+      "basis": "bbox overlap between MCP and PIP",
+      "confidence": "medium",
+      "driven_part_index": 24,
+      "driven_part_name": "PIP",
+      "obj_object_name": "PIP_24",
+      "extended_angle": 180.4,
+      "flexed_angle": 25.8,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "ring",
+      "joint": "dip",
+      "name": "ring_dip",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        -9.4,
+        37.0,
+        194.6
+      ],
+      "basis": "bbox overlap between PIP and Finger - Joint 3",
+      "confidence": "medium",
+      "driven_part_index": 11,
+      "driven_part_name": "Finger - Joint 3",
+      "obj_object_name": "Finger_-_Joint_3_11"
+    },
+    {
+      "finger": "pinky",
+      "joint": "mcp",
+      "name": "pinky_mcp",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        -30.9,
+        17.7,
+        129.3
+      ],
+      "basis": "from knuckle ring centre",
+      "confidence": "high",
+      "driven_part_index": 28,
+      "driven_part_name": "MCP",
+      "obj_object_name": "MCP_28",
+      "extended_angle": 176.8,
+      "flexed_angle": 106.2,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "pinky",
+      "joint": "pip",
+      "name": "pinky_pip",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        -31.3,
+        25.4,
+        168.3
+      ],
+      "basis": "bbox overlap between MCP and Pinky - Joint 2",
+      "confidence": "medium",
+      "driven_part_index": 14,
+      "driven_part_name": "Pinky - Joint 2",
+      "obj_object_name": "Pinky_-_Joint_2_14",
+      "extended_angle": 180.6,
+      "flexed_angle": 43.8,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "pinky",
+      "joint": "dip",
+      "name": "pinky_dip",
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "origin_mm": [
+        -32.0,
+        29.7,
+        191.0
+      ],
+      "basis": "bbox overlap between Pinky - Joint 2 and Pinky - Joint 3",
+      "confidence": "medium",
+      "driven_part_index": 27,
+      "driven_part_name": "Pinky - Joint 3",
+      "obj_object_name": "Pinky_-_Joint_3_27"
+    },
+    {
+      "finger": "thumb",
+      "joint": "cmc",
+      "name": "thumb_cmc",
+      "axis": [
+        0.02,
+        0.68,
+        0.73
+      ],
+      "origin_mm": [
+        47.974,
+        -26.224,
+        101.948
+      ],
+      "basis": "Thumb-Joint-1 principal axis 1; CMC is really a saddle joint (2 DOF) so a single axis is an approximation",
+      "confidence": "low - candidate only, verify before use",
+      "driven_part_index": 32,
+      "driven_part_name": "Thumb - Joint 1",
+      "obj_object_name": "Thumb_-_Joint_1_32",
+      "extended_angle": 178.9,
+      "flexed_angle": 132.2,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "thumb",
+      "joint": "mcp",
+      "name": "thumb_mcp",
+      "axis": [
+        -0.57,
+        -0.6,
+        0.57
+      ],
+      "origin_mm": [
+        70.036,
+        -35.823,
+        121.359
+      ],
+      "basis": "cross product of the two adjacent link directions (matches Thumb-Joint-1 principal axis 2, dot 0.99)",
+      "confidence": "low - candidate only, verify before use",
+      "driven_part_index": 34,
+      "driven_part_name": "Thumb - Joint 2",
+      "obj_object_name": "Thumb_-_Joint_2_34",
+      "extended_angle": 181.0,
+      "flexed_angle": 146.9,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    },
+    {
+      "finger": "thumb",
+      "joint": "ip",
+      "name": "thumb_ip",
+      "axis": [
+        -0.22,
+        -0.97,
+        0.1
+      ],
+      "origin_mm": [
+        84.853,
+        -37.765,
+        142.133
+      ],
+      "basis": "Thumb-Joint-3 principal axis 1; perpendicular to the link direction (dot 0.02)",
+      "confidence": "low - candidate only, verify before use",
+      "driven_part_index": 17,
+      "driven_part_name": "Thumb - Joint 3",
+      "obj_object_name": "Thumb_-_Joint_3_17",
+      "extended_angle": 181.0,
+      "flexed_angle": 142.4,
+      "calibration_source": "measured with tools/measure_tracking.py 2026-10-19"
+    }
+  ],
+  "obj_scale": 0.001,
+  "note_obj_groups": "the OBJ names each object <part name with spaces as _>_<index>",
+  "per_axis_calibration": true,
+  "calibration_note": "Each joint's 0..1 fold range comes from its own measured span, not one global pair. The MCP joints move only 20-35 degrees because a curled finger points at the camera and its 2D projection collapses -- a single-camera limitation, so they need their own, narrower range."
+}

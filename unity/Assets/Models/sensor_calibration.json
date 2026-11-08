@@ -1,0 +1,71 @@
+{
+  "source": "tools/measure_tracking.py 15 s open<->fist capture on 2026-10-22 (438 frames, 366 detections); wrist_rot excluded -- it read 0 for the whole capture because of the handedness bug fixed the same day. Re-run with --write-calibration after exercising every joint.",
+  "axes": [
+    {
+      "name": "index_mcp",
+      "min": 150.5,
+      "max": 179.3,
+      "span": 28.8
+    },
+    {
+      "name": "index_pip",
+      "min": 16.4,
+      "max": 178.1,
+      "span": 161.7
+    },
+    {
+      "name": "middle_mcp",
+      "min": 160.1,
+      "max": 179.3,
+      "span": 19.2
+    },
+    {
+      "name": "middle_pip",
+      "min": 2.8,
+      "max": 178.8,
+      "span": 176.0
+    },
+    {
+      "name": "ring_mcp",
+      "min": 156.3,
+      "max": 179.6,
+      "span": 23.3
+    },
+    {
+      "name": "ring_pip",
+      "min": 2.4,
+      "max": 178.4,
+      "span": 176.0
+    },
+    {
+      "name": "pinky_mcp",
+      "min": 120.9,
+      "max": 178.9,
+      "span": 58.0
+    },
+    {
+      "name": "pinky_pip",
+      "min": 42.9,
+      "max": 179.5,
+      "span": 136.6
+    },
+    {
+      "name": "thumb_cmc",
+      "min": 131.9,
+      "max": 158.0,
+      "span": 26.1
+    },
+    {
+      "name": "thumb_mcp",
+      "min": 143.7,
+      "max": 180.0,
+      "span": 36.3
+    },
+    {
+      "name": "thumb_ip",
+      "min": 122.5,
+      "max": 180.0,
+      "span": 57.5
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# PlatformIO build tree for the STM32 firmware (fetched libraries + objects)
+firmware_stm32/.pio/
+
+# Build outputs
+*.hex
+*.elf
+*.bin
+*.map
+
+# Logs
+logs/
+*.log
+
+# MediaPipe model: the copy the code loads is models/hand_landmarker.task.
+# The identical file at the repo root is a leftover duplicate.
+/hand_landmarker.task
+
+# Images extracted from a .docx while reading it; no document references them
+/_doc_image*
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ---------------------------------------------------------------------------
+# 文档：不进仓库，本地文件保留
+#
+# 仓库只留根目录一个 README.md。其余说明、计划、汇报材料都留在本机，
+# 因为其中包含指导老师姓名、成员姓名和学号，不对外公开。
+# ---------------------------------------------------------------------------
+
+# 除根目录 README.md 之外的所有 Markdown
+/*.md
+!/README.md
+
+# 设计说明、模型分析、组会汇报、硬件模板（目录内全是文档）
+/docs/
+
+# Unity 子目录的说明文件
+/unity/README.md
+
+# SRTP 申报书、项目计划书、汇报 PPT（含姓名与学号）
+/srtp/*.doc
+/srtp/*.docx
+/srtp/*.pptx
+
+# 根目录的硬件选型与舵机方案
+/*.doc
+/*.docx
+
+# 与代码无关的项目说明文本（requirements.txt 仍然入库，它是依赖清单）
+/成果简介及转化需求.txt
+/项目概述.txt
+
+# 申报书生成脚本：正文与成员信息写死在脚本里，不是项目代码
+/srtp/build_plan.py
+
+# 申报书插图（从网上收集的参考图，不属于代码）
+/srtp/*.png
+/srtp/*.jpg
+/srtp/*.jpeg
+
+# AI 工具配置，不属于项目代码
+/.claude/
+

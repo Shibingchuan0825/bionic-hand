@@ -1,0 +1,780 @@
+"""
+Virtual Bionic Hand Renderer.
+
+Draws a dorsal-view (back of hand) hand that mirrors the bionic hand's joint
+angles in real time.  The point of this view is to show the *mounting layout* of
+the physical hand: the palm is the plate the fingers and the thumb bolt onto, so
+the sketch draws that plate, the socket where each digit roots, and the web
+between thumb and index that closes when the thumb adducts.
+
+    * four fingers root along the palm's top edge and fan apart,
+    * the thumb roots low on the lateral edge and swings up across the thenar,
+    * the whole hand rotates about the wrist with wrist_rot.
+
+Angles follow the servo convention: 0 degrees = fully flexed (closed),
+180 degrees = fully extended (straight).
+
+How flexion is drawn
+--------------------
+This is a dorsal view, so a finger curling toward the palm rotates about an
+axis pointing roughly at the viewer: its true projection is *foreshortening*,
+not a sideways swing.  The sketch therefore does two things at once, both of
+them smooth functions of the command angle:
+
+    * the segment shortens by ``cos`` of the fold, floored so a closed finger
+      stays visible instead of collapsing to a point;
+    * the segment tilts a little toward the palm's centre line, so the fold is
+      readable rather than looking like the finger simply shrank.
+
+An earlier version rotated each segment by the raw flexion angle instead.  That
+is wrong in a way that only shows up numerically: subtracting 155 degrees from
+an "up" direction lands near 180, so every finger in a fist swung out to the
+side rather than curling in.  Interpolating toward a target direction has the
+same failure, because "up" and "down" are antiparallel and the interpolated
+vector passes through zero.  Foreshortening has neither problem.
+
+No physics is simulated.  This is a kinematic sketch for operator feedback and
+for checking the angle mapping before the mechanism exists.
+"""
+
+import math
+from typing import Dict, List, Sequence, Tuple
+
+import cv2
+import numpy as np
+
+# ---------------------------------------------------------------------------
+# Palette
+# ---------------------------------------------------------------------------
+
+PALM_FILL = (170, 154, 138)
+PALM_SHADE = (126, 112, 100)
+PALM_EDGE = (104, 92, 80)
+THENAR_FILL = (156, 141, 126)
+SOCKET_FILL = (96, 88, 80)
+BONE_COLOR = (86, 86, 92)
+JOINT_COLOR = (58, 58, 188)
+FINGERTIP_COLOR = (0, 200, 255)
+BG_COLOR = (38, 38, 38)
+TEXT_DIM = (150, 150, 150)
+WRIST_FILL = (132, 122, 112)
+
+FINGER_COLORS = {
+    "thumb": (255, 140, 80),
+    "index": (80, 220, 80),
+    "middle": (80, 180, 255),
+    "ring": (220, 220, 80),
+    "pinky": (220, 120, 220),
+}
+
+# ---------------------------------------------------------------------------
+# Geometry constants (design-space units, scaled to the canvas at draw time)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Segment proportions (RUKA v2 / human hand)
+# ---------------------------------------------------------------------------
+#
+# The RATIOS below are the fixed, anatomical part.  They come from the RUKA v2
+# hand model, which is itself built to human proportions:
+#
+#   four fingers, proximal : middle : distal  =  1 : 0.67 : 0.5
+#   thumb,       proximal : distal            =  1 : 0.75
+#   total length order                        =  middle > ring > index > pinky
+#
+# Only PALM_SCALE (and the palm outline it feeds) is meant to be re-tuned; the
+# ratios should stay fixed.  That is the point of parameterising them: a model
+# with hard-coded absolute sizes cannot be rescaled without redoing the linkage,
+# which is why an off-the-shelf STL was not usable here.
+
+# Proximal-phalanx ratio set for the four fingers (proximal, middle, distal).
+FINGER_PHALANX_RATIOS = (1.00, 0.67, 0.50)
+# The thumb has two phalanges, not three.
+THUMB_PHALANX_RATIOS = (1.00, 0.75)
+
+# Relative total finger length, longest = 1.  Order matters: middle > ring >
+# index > pinky, which is what a real hand does.
+FINGER_LENGTH_SCALE = {
+    "index": 0.93,
+    "middle": 1.00,
+    "ring": 0.96,
+    "pinky": 0.75,
+}
+
+# The thumb's visible length against the index's, phalanx for phalanx.
+# A real thumb is about two thirds of the index (~57 mm against ~85 mm).
+THUMB_TO_INDEX = 0.67
+
+# The one size parameter: the middle finger's total phalanx length, in design
+# units.  Everything else is derived from it and the ratios above.
+MIDDLE_FINGER_LENGTH = 74.0
+
+# Per-digit thickness multiplier.  A thumb is noticeably chunkier than a little
+# finger, and drawing every digit at one width makes the thumb read as a stray
+# pole rather than as part of the hand.
+WIDTH_SCALE = {
+    "thumb": 1.55,
+    "index": 1.10,
+    "middle": 1.05,
+    "ring": 1.00,
+    "pinky": 0.85,
+}
+
+# In-palm (metacarpal) segment per digit.  The four fingers have short ones
+# because the palm body already spans that distance; the thumb's is longer
+# because its metacarpal is buried in the thenar mass.
+METACARPAL_LENGTH = {
+    "thumb": 30.0,
+    "index": 12.0,
+    "middle": 13.0,
+    "ring": 12.0,
+    "pinky": 10.0,
+}
+
+
+def _derive_phalanx_lengths() -> Dict[str, tuple]:
+    """Build the per-digit phalanx lengths from the ratios above.
+
+    Derived rather than written out, so the proportions cannot drift apart from
+    each other when one number is edited.
+    """
+    lengths: Dict[str, tuple] = {}
+    for finger, scale in FINGER_LENGTH_SCALE.items():
+        total = MIDDLE_FINGER_LENGTH * scale
+        ratio_sum = sum(FINGER_PHALANX_RATIOS)
+        lengths[finger] = tuple(total * r / ratio_sum for r in FINGER_PHALANX_RATIOS)
+
+    index_total = MIDDLE_FINGER_LENGTH * FINGER_LENGTH_SCALE["index"]
+    thumb_total = index_total * THUMB_TO_INDEX
+    thumb_ratio_sum = sum(THUMB_PHALANX_RATIOS)
+    lengths["thumb"] = tuple(thumb_total * r / thumb_ratio_sum
+                             for r in THUMB_PHALANX_RATIOS)
+    return lengths
+
+
+PHALANX_LENGTHS = _derive_phalanx_lengths()
+
+# Resting spread of the four fingers, in image degrees (0 = right, -90 = up).
+FINGER_SPREAD = {
+    "index": -97.0,
+    "middle": -90.0,
+    "ring": -83.0,
+    "pinky": -76.0,
+}
+
+# Where each digit's metacarpal-phalangeal joint sits on the palm rim, in
+# degrees around the palm centre (0 = right, -90 = up, 180 = left).
+#
+# The thumb roots on the palm's lateral edge at roughly the palm's mid-height
+# (about 180 degrees), NOT down at the bottom corner.  Rooting it too low is why
+# a pinch could never close: the thumb started ~93 units from the index tip
+# while the whole thumb was only ~66 long, so no command angle could reach.
+KNUCKLE_ANGLES = {
+    "index": -103.0,
+    "middle": -90.0,
+    "ring": -77.0,
+    "pinky": -64.0,
+    "thumb": 181.0,
+}
+
+# Fraction of the palm radius at which each digit roots.  The thumb sits a
+# little further out so the web has room to open.
+KNUCKLE_RADIUS = {
+    "index": 0.84,
+    "middle": 0.86,
+    "ring": 0.84,
+    "pinky": 0.80,
+    "thumb": 0.92,
+}
+
+# The angle range the renderer treats as "fully extended" .. "fully flexed".
+#
+# This is NOT 0-180, even though the protocol allows 0-180.  The mapper measures
+# the interior angle at a joint, so a straight finger reads about 158 and a
+# closed one about 68; it never emits the protocol extremes.  Calibrating the
+# drawing against 0-180 therefore wasted most of the curve on angles that never
+# occur, and a real hand closing moved the fingertip only ~12 units out of ~54
+# -- which is exactly why the sketch looked like it was not following the hand.
+#
+# These bounds are measured from the mapper's actual output (see
+# tests/test_virtual_hand.py::test_flex_curve_matches_the_mappers_real_range).
+EXTENDED_ANGLE = 158.0
+FLEXED_ANGLE = 68.0
+
+# How far the joint bends, in drawing degrees, across the whole working range.
+#
+# A real finger curls about 260 degrees in total (MCP ~90, PIP ~100, DIP ~70).
+# An earlier set totalled 180 and capped the MCP at 62, so a closed fist only
+# half-closed -- which is exactly what "bending is not enough" was about.  These
+# are close to the anatomical values, trimmed slightly so the fingertip curls
+# into the palm rather than through it.
+FLEX_DEGREES = {
+    "mcp": 88.0,
+    "pip": 95.0,
+    "dip": 55.0,
+}
+
+# Direction the fingers point when fully extended, in image degrees
+# (0 = right, -90 = straight up).
+FINGER_SPREAD = {
+    "index": -97.0,
+    "middle": -90.0,
+    "ring": -83.0,
+    "pinky": -76.0,
+}
+
+
+def _flex_sign(finger: str) -> float:
+    """Which way a finger curls, in image-angle terms.
+
+    Image angles run 0 = right, -90 = up, +/-180 = left.  A finger whose knuckle
+    sits LEFT of the palm's centre line must curl to the RIGHT (toward centre),
+    which means its angle increases; a finger right of centre curls left, which
+    means its angle decreases.  So the sign is the side of centre the knuckle is
+    on -- not, as an earlier version had it, the opposite.
+    """
+    return -1.0 if finger in ("index", "middle") else 1.0
+
+
+# The virtual DIP is not a servo axis; it follows the PIP as a single-tendon
+# finger does.
+DIP_COUPLING = 0.75
+
+# How far the thumb's two joints curl toward the palm at full flexion, as a
+# fraction of the way toward the palm's centre.  A thumb folds less than a
+# finger and in a different plane, so it gets its own constant rather than
+# reusing FLEX_DEGREES.
+THUMB_CURL = 0.55
+
+# Thumb metacarpal direction, in image degrees, as a function of thumb_cmc.
+# At 0 (flexed) the thumb points up and inward, across the palm toward the
+# index; at 180 (extended) it is splayed out to the side.  That swing is what
+# opens and closes the web, and it has to actually span the direction of the
+# index tip or a pinch can never visually close -- the range was previously
+# -114..-166, which never points to the right at all, so the thumb always
+# pointed away from the fingers no matter what was commanded.
+THUMB_DIR_AT_FLEXED = -58.0      # tucked in, across the palm toward the index
+THUMB_DIR_AT_EXTENDED = -152.0   # splayed outward, web open
+
+
+# The wrist_rot range the drawing is sized to fit.  90 is neutral.  The
+# protocol allows 0-180, and the sketch is sized so that whole span stays on
+# canvas -- a clipped fingertip is worse than a slightly smaller hand, because
+# the operator cannot tell "the hand is at its limit" from "the drawing broke".
+# Fitting a full 360 turn instead would shrink the hand to about half size.
+FIT_WRIST_RANGE = (0.0, 180.0)
+
+
+class VirtualHandRenderer:
+    """Render a dorsal-view bionic hand from a joint-angle mapping.
+
+    Usage:
+        renderer = VirtualHandRenderer(width=420, height=350)
+        image = renderer.render(angles)
+    """
+
+    def __init__(self, width: int = 420, height: int = 350):
+        self.width = int(width)
+        self.height = int(height)
+
+        # The hand is laid out in a fixed design space and then scaled into
+        # whatever canvas the caller asks for, so bone lengths never need
+        # re-tuning when the dashboard changes size.
+        self._design_w = 300.0
+        self._design_h = 330.0
+
+        # Wrist pivot: low and centred.  The hand rotates about this point.
+        self._wrist = (self._design_w / 2.0, self._design_h - 20.0)
+        # Palm centre, measured up from the wrist along the palm axis.
+        self._palm_center = (self._design_w / 2.0, self._design_h - 114.0)
+        self._palm_radius = 48.0
+
+        # Scale and offset are derived from the actual drawing, so the hand
+        # fills the canvas no matter how the bone lengths above are tuned.
+        self._scale, self._offset = self._compute_fit()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def render(self, angles: Dict[str, float]) -> np.ndarray:
+        """Render the hand.
+
+        Args:
+            angles: Joint name -> angle in degrees.  0 = flexed, 180 = extended.
+                    Missing joints fall back to a relaxed open pose.
+
+        Returns:
+            BGR image as a numpy array.
+        """
+        canvas = np.full((self.height, self.width, 3), BG_COLOR, dtype=np.uint8)
+
+        pose = self._solve(angles)
+
+        # Wrist rotation swings every solved point about the wrist pivot.
+        wrist_angle = float(angles.get("wrist_rot", 90.0))
+        pose = self._apply_wrist_rotation(pose, wrist_angle)
+
+        self._draw_title(canvas)
+        self._draw_palm(canvas, pose, wrist_angle)
+        self._draw_digit(canvas, pose, "thumb")
+        for finger in ("index", "middle", "ring", "pinky"):
+            self._draw_digit(canvas, pose, finger)
+        self._draw_sockets(canvas, pose)
+        self._draw_legend(canvas, wrist_angle)
+
+        return canvas
+
+    # ------------------------------------------------------------------
+    # Kinematics
+    # ------------------------------------------------------------------
+
+    def _solve(self, angles: Dict[str, float]) -> Dict[str, List[Tuple[float, float]]]:
+        """Compute the joint chain of every digit, in design space."""
+        chains: Dict[str, List[Tuple[float, float]]] = {}
+        for finger in ("index", "middle", "ring", "pinky"):
+            chains[finger] = self._solve_finger(finger, angles)
+        chains["thumb"] = self._solve_thumb(angles)
+        return chains
+
+    def _knuckle(self, finger: str) -> Tuple[float, float]:
+        """Position of a digit's root socket on the palm rim."""
+        cx, cy = self._palm_center
+        radius = self._palm_radius * KNUCKLE_RADIUS[finger]
+        ang = math.radians(KNUCKLE_ANGLES[finger])
+        return (cx + radius * math.cos(ang), cy + radius * math.sin(ang))
+
+    @staticmethod
+    def _fold_fraction(servo_angle: float) -> float:
+        """Map a measured joint angle onto 0 (extended) .. 1 (fully flexed).
+
+        Calibrated against the mapper's real output range, not the protocol's
+        0-180: see EXTENDED_ANGLE / FLEXED_ANGLE for why that matters.
+        """
+        span = EXTENDED_ANGLE - FLEXED_ANGLE
+        return min(1.0, max(0.0, (EXTENDED_ANGLE - servo_angle) / span))
+
+    def _solve_finger(
+        self, finger: str, angles: Dict[str, float]
+    ) -> List[Tuple[float, float]]:
+        """Solve one of the four fingers: socket -> MCP -> PIP -> DIP -> TIP.
+
+        Each phalanx rotates about its own joint by a real angle, and the
+        rotations ACCUMULATE down the chain -- that is what a finger does.  The
+        direction is always computed from the finger's resting direction plus the
+        total flexion so far, never by subtracting from the running direction:
+        the latter is what made a fist splay sideways, because subtracting a
+        large angle from an "up" heading wraps the segment past horizontal.
+        """
+        base = self._knuckle(finger)
+        prox_len, mid_len, dist_len = PHALANX_LENGTHS[finger]
+
+        # The metacarpal runs outward from the socket along the finger's spread
+        # direction.  It sits inside the palm, so it never folds.
+        spread = FINGER_SPREAD[finger]
+        mcp = self._step(base, spread, METACARPAL_LENGTH[finger])
+
+        mcp_fold = self._fold_fraction(float(angles.get(f"{finger}_mcp", 160.0)))
+        pip_fold = self._fold_fraction(float(angles.get(f"{finger}_pip", 170.0)))
+        dip_fold = pip_fold * DIP_COUPLING
+
+        sign = _flex_sign(finger)
+
+        # Cumulative flexion at each joint, in drawing degrees.
+        mcp_bend = sign * mcp_fold * FLEX_DEGREES["mcp"]
+        pip_bend = mcp_bend + sign * pip_fold * FLEX_DEGREES["pip"]
+        dip_bend = pip_bend + sign * dip_fold * FLEX_DEGREES["dip"]
+
+        pip = self._step(mcp, spread + mcp_bend, prox_len)
+        dip = self._step(pip, spread + pip_bend, mid_len)
+        tip = self._step(dip, spread + dip_bend, dist_len)
+
+        return [base, mcp, pip, dip, tip]
+
+    def _solve_thumb(self, angles: Dict[str, float]) -> List[Tuple[float, float]]:
+        """Solve the thumb: socket -> CMC -> MCP -> IP -> TIP.
+
+        ``thumb_cmc`` swings the whole thumb between lying alongside the index
+        (flexed) and standing away from the palm (extended).  That swing is what
+        opens and closes the web, which is why the thumb is drawn from a low
+        lateral socket rather than off the knuckle line.
+        """
+        base = self._knuckle("thumb")
+        prox_len, dist_len = PHALANX_LENGTHS["thumb"]
+
+        cmc_angle = float(angles.get("thumb_cmc", 140.0))
+        mcp_fold = self._fold_fraction(float(angles.get("thumb_mcp", 140.0)))
+        ip_fold = self._fold_fraction(float(angles.get("thumb_ip", 140.0)))
+
+        # Direction of the thumb's metacarpal, driven by the CMC axis.
+        span = THUMB_DIR_AT_EXTENDED - THUMB_DIR_AT_FLEXED
+        cmc_dir = THUMB_DIR_AT_FLEXED + span * (cmc_angle / 180.0)
+
+        # The metacarpal is buried in the thenar, so only the part that clears
+        # the palm rim is drawn.  Drawing too little of it leaves the thumb
+        # looking detached from the hand.
+        mcp = self._step(base, cmc_dir, METACARPAL_LENGTH["thumb"] * 0.85)
+
+        # The thumb curls toward the palm centre, not toward the fingers.
+        cx, cy = self._palm_center
+        toward_palm = math.degrees(math.atan2(cy - mcp[1], cx - mcp[0]))
+
+        # Real rotation, accumulated down the chain like the fingers: the MCP
+        # bends from the CMC direction, the IP from the MCP direction.
+        mcp_dir = self._blend(cmc_dir, toward_palm, mcp_fold * THUMB_CURL)
+        ip = self._step(mcp, mcp_dir, prox_len)
+
+        ip_dir = self._blend(mcp_dir, toward_palm, ip_fold * THUMB_CURL)
+        tip = self._step(ip, ip_dir, dist_len)
+
+        return [base, mcp, ip, tip]
+
+    @staticmethod
+    def _blend(from_deg: float, to_deg: float, fraction: float) -> float:
+        """Rotate ``from_deg`` toward ``to_deg`` by ``fraction`` of the way."""
+        fraction = min(1.0, max(0.0, fraction))
+        delta = (to_deg - from_deg + 180.0) % 360.0 - 180.0
+        return from_deg + delta * fraction
+
+    @staticmethod
+    def _step(
+        origin: Tuple[float, float], angle_deg: float, length: float
+    ) -> Tuple[float, float]:
+        rad = math.radians(angle_deg)
+        return (origin[0] + length * math.cos(rad), origin[1] + length * math.sin(rad))
+
+    # ------------------------------------------------------------------
+    # Wrist rotation
+    # ------------------------------------------------------------------
+
+    def _rotate_point(
+        self, point: Tuple[float, float], wrist_angle: float
+    ) -> Tuple[float, float]:
+        """Rotate one design-space point about the wrist pivot."""
+        delta = math.radians(wrist_angle - 90.0)
+        cos_d, sin_d = math.cos(delta), math.sin(delta)
+        wx, wy = self._wrist
+        dx, dy = point[0] - wx, point[1] - wy
+        return (wx + dx * cos_d - dy * sin_d, wy + dx * sin_d + dy * cos_d)
+
+    def _apply_wrist_rotation(
+        self, pose: Dict[str, List[Tuple[float, float]]], wrist_angle: float
+    ) -> Dict[str, List[Tuple[float, float]]]:
+        """Rotate every solved point about the wrist pivot.
+
+        ``wrist_rot`` is a yaw about the forearm axis.  Seen from the back of
+        the hand it reads as the whole hand tilting, so the sketch tilts too.
+        """
+        return {
+            finger: [self._rotate_point(p, wrist_angle) for p in chain]
+            for finger, chain in pose.items()
+        }
+
+    # ------------------------------------------------------------------
+    # Canvas fitting
+    # ------------------------------------------------------------------
+
+    def _reference_angles(self) -> Dict[str, float]:
+        """A relaxed open pose, used to size the drawing."""
+        angles: Dict[str, float] = {"wrist_rot": 90.0}
+        for finger in ("index", "middle", "ring", "pinky"):
+            angles[f"{finger}_mcp"] = 180.0
+            angles[f"{finger}_pip"] = 180.0
+        angles.update({"thumb_cmc": 150.0, "thumb_mcp": 170.0, "thumb_ip": 170.0})
+        return angles
+
+    def _compute_fit(self) -> Tuple[float, Tuple[float, float]]:
+        """Derive scale and offset so the drawing fills the canvas.
+
+        The fit is measured over the *whole* wrist_rot range, not just the
+        upright pose.  A hand that fits at 90 degrees can swing far outside the
+        canvas at 140: the fingers are drawn from a pivot near the bottom, so
+        rotating sweeps them through a wide arc.  Fitting only the upright pose
+        silently clipped fingertips off-screen whenever the wrist turned.
+
+        Measuring the actual geometry also beats hand-tuned constants: if a bone
+        length changes, the fit follows automatically.
+        """
+        points = list(self._palm_outline())
+        points.extend(self._wrist_quad())
+        upright = self._solve(self._reference_angles())
+        for chain in upright.values():
+            points.extend(chain)
+
+        # Rotate the same geometry through the wrist range and include every
+        # pose.  The wrist pivot is rotation-invariant, so it is added once.
+        low, high = FIT_WRIST_RANGE
+        samples = [low + (high - low) * i / 12.0 for i in range(13)]
+        for wrist_angle in samples:
+            rotated = self._apply_wrist_rotation(upright, wrist_angle)
+            for chain in rotated.values():
+                points.extend(chain)
+            # Palm and wrist stub rotate too.
+            delta = math.radians(wrist_angle - 90.0)
+            cos_d, sin_d = math.cos(delta), math.sin(delta)
+            wx, wy = self._wrist
+            for x, y in list(self._palm_outline()) + list(self._wrist_quad()):
+                dx, dy = x - wx, y - wy
+                points.append((wx + dx * cos_d - dy * sin_d,
+                               wy + dx * sin_d + dy * cos_d))
+
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+
+        margin = 6.0
+        span_x = max(1e-6, max_x - min_x)
+        span_y = max(1e-6, max_y - min_y)
+        scale = min(
+            (self.width - 2 * margin) / span_x,
+            (self.height - 2 * margin) / span_y,
+        )
+        offset = (
+            (self.width - span_x * scale) / 2.0 - min_x * scale,
+            (self.height - span_y * scale) / 2.0 - min_y * scale,
+        )
+        return scale, offset
+
+    def _to_canvas(self, point: Tuple[float, float]) -> Tuple[int, int]:
+        x = point[0] * self._scale + self._offset[0]
+        y = point[1] * self._scale + self._offset[1]
+        return (int(round(x)), int(round(y)))
+
+    # ------------------------------------------------------------------
+    # Drawing
+    # ------------------------------------------------------------------
+
+    def _draw_title(self, canvas: np.ndarray) -> None:
+        cv2.putText(canvas, "Virtual Bionic Hand", (8, 18),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (205, 205, 205), 1)
+
+    def _palm_outline(self) -> List[Tuple[float, float]]:
+        """Sample the palm silhouette.
+
+        A real palm is widest across the knuckles and tapers steadily down to
+        the wrist -- a rounded trapezoid.  Two earlier attempts missed this: a
+        plain ellipse read as a blob, and a "waist plus heel flare" profile read
+        as a vase.  The taper here is monotonic, which is what a palm does.
+        """
+        cx, cy = self._palm_center
+        a = self._palm_radius * 0.88      # half width at the knuckle line
+        b = self._palm_radius * 0.80      # half height
+        n = 2.6                           # corner roundness
+
+        points: List[Tuple[float, float]] = []
+        steps = 96
+        for i in range(steps):
+            t = 2.0 * math.pi * i / steps
+            ct, st = math.cos(t), math.sin(t)
+            x = a * math.copysign(abs(ct) ** (2.0 / n), ct)
+            y = b * math.copysign(abs(st) ** (2.0 / n), st)
+
+            # v runs 0 at the knuckle line (top) to 1 at the wrist (bottom).
+            v = (y / b + 1.0) / 2.0
+            # Monotonic taper: widest at the knuckles, narrowest at the wrist.
+            width = 1.0 - 0.30 * v
+            points.append((cx + x * width, cy + y))
+        return points
+
+    def _knuckle_bulges(self) -> List[Tuple[float, float, float]]:
+        """Centre and radius of the bulge at each finger's knuckle.
+
+        Drawn on top of the palm so the knuckle line reads as knuckles rather
+        than a flat edge.
+        """
+        cx, cy = self._palm_center
+        r = self._palm_radius
+        bulges = []
+        for finger in ("index", "middle", "ring", "pinky"):
+            kx, ky = self._knuckle(finger)
+            # Pull each bulge slightly inside the rim so it sits ON the palm.
+            bx = cx + (kx - cx) * 0.90
+            by = cy + (ky - cy) * 0.90
+            bulges.append((bx, by, r * 0.19))
+        return bulges
+
+    def _wrist_quad(self) -> List[Tuple[float, float]]:
+        """The wrist stub below the palm, so the pivot is visible."""
+        cx, cy = self._palm_center
+        wx, wy = self._wrist
+        top = cy + self._palm_radius * 0.55
+        half_top = self._palm_radius * 0.34
+        half_bottom = self._palm_radius * 0.30
+        return [
+            (cx - half_top, top),
+            (cx + half_top, top),
+            (wx + half_bottom, wy),
+            (wx - half_bottom, wy),
+        ]
+
+    def _draw_palm(
+        self,
+        canvas: np.ndarray,
+        pose: Dict[str, List[Tuple[float, float]]],
+        wrist_angle: float,
+    ) -> None:
+        """Draw the wrist stub, the palm plate, and the thenar mass.
+
+        The palm and wrist stub rotate with the hand.  Drawing them unrotated
+        while the fingers rotated left every finger rooted in mid-air beside a
+        stationary palm -- the digits and the plate they bolt onto have to share
+        one transform.
+        """
+        rotate = lambda p: self._rotate_point(p, wrist_angle)  # noqa: E731
+
+        # Wrist first, so the palm overlaps it.
+        cv2.fillPoly(
+            canvas,
+            [np.array([self._to_canvas(rotate(p)) for p in self._wrist_quad()],
+                      dtype=np.int32)],
+            WRIST_FILL,
+        )
+
+        outline = np.array(
+            [self._to_canvas(rotate(p)) for p in self._palm_outline()], dtype=np.int32
+        )
+        cv2.fillPoly(canvas, [outline], PALM_FILL)
+
+        # Thickness: shade the lower (wrist-side) half darker.  A flat fill has
+        # no depth, which is most of why the palm read as a paper cut-out.
+        cx, cy = self._palm_center
+        r = self._palm_radius
+        shade = np.array(
+            [
+                self._to_canvas(rotate((cx - r * 1.05, cy + r * 0.10))),
+                self._to_canvas(rotate((cx + r * 1.05, cy + r * 0.10))),
+                self._to_canvas(rotate((cx + r * 1.05, cy + r * 1.05))),
+                self._to_canvas(rotate((cx - r * 1.05, cy + r * 1.05))),
+            ],
+            dtype=np.int32,
+        )
+        # Clip the shading to the palm silhouette so it cannot spill outside.
+        mask = np.zeros(canvas.shape[:2], dtype=np.uint8)
+        cv2.fillPoly(mask, [outline], 255)
+        overlay = canvas.copy()
+        cv2.fillPoly(overlay, [shade], PALM_SHADE)
+        blended = cv2.addWeighted(overlay, 0.45, canvas, 0.55, 0)
+        canvas[mask > 0] = blended[mask > 0]
+
+        # Knuckle bulges along the top edge.
+        for bx, by, br in self._knuckle_bulges():
+            cv2.circle(canvas, self._to_canvas(rotate((bx, by))),
+                       max(3, int(br * self._scale)), PALM_EDGE, -1)
+            cv2.circle(canvas, self._to_canvas(rotate((bx, by))),
+                       max(3, int(br * self._scale)), PALM_FILL, 1)
+
+        # Outline last, so nothing overlaps the silhouette edge.
+        cv2.polylines(canvas, [outline], True, PALM_EDGE, 2)
+
+        # Thenar mass: the wedge between the thumb root and the palm.  This is
+        # the region the web closes into, so it is drawn from the solved thumb
+        # and index roots rather than at a fixed spot.
+        thumb_root = pose["thumb"][0]
+        index_root = pose["index"][0]
+        thenar = np.array(
+            [
+                self._to_canvas(thumb_root),
+                self._to_canvas(rotate((cx - r * 0.74, cy + r * 0.34))),
+                self._to_canvas(rotate((cx - r * 0.10, cy + r * 0.62))),
+                self._to_canvas(index_root),
+            ],
+            dtype=np.int32,
+        )
+        cv2.fillPoly(canvas, [thenar], THENAR_FILL)
+        cv2.polylines(canvas, [thenar], True, PALM_EDGE, 1)
+
+        # Palm creases.  Drawn as curved arcs, not straight lines: straight
+        # segments read as scratches on a flat block, which is worse than no
+        # creases at all.
+        for start, ctrl, end, shade in (
+            ((-0.42, 0.10), (-0.10, 0.34), (0.16, 0.58), 0),   # life line
+            ((-0.34, -0.20), (0.02, 0.06), (0.34, 0.14), 0),   # head line
+            ((0.20, -0.30), (0.28, -0.02), (0.26, 0.26), 1),   # heart line
+        ):
+            pts = []
+            for k in range(13):
+                u = k / 12.0
+                # Quadratic Bezier.
+                px = (1 - u) ** 2 * start[0] + 2 * (1 - u) * u * ctrl[0] + u ** 2 * end[0]
+                py = (1 - u) ** 2 * start[1] + 2 * (1 - u) * u * ctrl[1] + u ** 2 * end[1]
+                pts.append(self._to_canvas(rotate((cx + r * px, cy + r * py))))
+            colour = PALM_SHADE if shade else PALM_EDGE
+            cv2.polylines(canvas, [np.array(pts, dtype=np.int32)], False,
+                          colour, 1, cv2.LINE_AA)
+
+    def _draw_sockets(
+        self, canvas: np.ndarray, pose: Dict[str, List[Tuple[float, float]]]
+    ) -> None:
+        """Mark where each digit mounts on the palm.
+
+        These are the mounting points the physical fingers bolt onto, so drawing
+        them keeps the sketch honest about what the palm plate is for.
+        """
+        radius = max(3, int(4.0 * self._scale))
+        for chain in pose.values():
+            centre = self._to_canvas(chain[0])
+            cv2.circle(canvas, centre, radius, SOCKET_FILL, -1)
+            cv2.circle(canvas, centre, radius, PALM_EDGE, 1)
+
+    def _draw_digit(
+        self, canvas: np.ndarray, pose: Dict[str, List[Tuple[float, float]]], finger: str
+    ) -> None:
+        """Draw one digit's bones, joints and tip.
+
+        Bones are drawn in two passes -- every dark underlay first, then every
+        coloured line.  Interleaving the two per segment leaves the underlay of
+        one bone sticking out past the coloured line of the next, which shows up
+        as thin spikes at each joint.
+        """
+        chain = pose[finger]
+        color = FINGER_COLORS[finger]
+        canvas_pts = [self._to_canvas(p) for p in chain]
+
+        widths = self._segment_widths(len(chain) - 1, finger)
+        for i in range(len(canvas_pts) - 1):
+            cv2.line(canvas, canvas_pts[i], canvas_pts[i + 1],
+                     BONE_COLOR, widths[i] + 4)
+        for i in range(len(canvas_pts) - 1):
+            cv2.line(canvas, canvas_pts[i], canvas_pts[i + 1], color, widths[i])
+
+        # Joints: skip the root, which sits under the socket marker.
+        for point in canvas_pts[1:-1]:
+            cv2.circle(canvas, point, max(2, int(3.2 * self._scale)), JOINT_COLOR, -1)
+
+        tip = canvas_pts[-1]
+        cv2.circle(canvas, tip, max(3, int(5 * self._scale)), FINGERTIP_COLOR, -1)
+        cv2.circle(canvas, tip, max(3, int(5 * self._scale)), (60, 60, 60), 1)
+
+    def _segment_widths(self, count: int, finger: str = "middle") -> List[int]:
+        """Line widths from knuckle to tip, in canvas pixels.
+
+        Fingers are drawn noticeably thicker than a wire skeleton: at dashboard
+        size a thin line reads as a stick, and the whole point of this view is
+        to look like the hand the operator is about to build.
+        """
+        if count <= 0:
+            return []
+        base = max(3.0, 7.0 * self._scale) * WIDTH_SCALE.get(finger, 1.0)
+        return [
+            max(2, int(round(base * (1.0 - 0.42 * i / max(1, count - 1)))))
+            for i in range(count)
+        ]
+
+    def _draw_legend(self, canvas: np.ndarray, wrist_angle: float) -> None:
+        y = self.height - 6
+        cv2.putText(
+            canvas,
+            f"wrist_rot {wrist_angle:.0f} deg",
+            (8, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.36,
+            TEXT_DIM,
+            1,
+        )
+
+
+def summarize_pose(angles: Dict[str, float], fingers: Sequence[str] = ()) -> str:
+    """One-line text summary of a pose, for logs and tests."""
+    names = list(fingers) if fingers else sorted(angles)
+    return " ".join(f"{name}={float(angles.get(name, 0.0)):.0f}" for name in names)

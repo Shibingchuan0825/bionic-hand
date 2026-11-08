@@ -1,0 +1,180 @@
+# Bionic Dexterous Hand Configuration
+# ======================================
+
+# Authoritative logical-axis/channel manifest.  The values under servos.pins
+# remain legacy inventory labels; PCA9685 output channels are defined in this
+# manifest and in the Arduino SERVO_CHANNELS array.
+hardware_manifest: "hardware_manifest.yaml"
+
+# Camera settings
+camera:
+  index: 0              # Camera device index
+  width: 640            # Capture width
+  height: 480           # Capture height
+  fps: 30               # Target frames per second
+  flip_horizontal: false # Mirror the camera image
+
+# MediaPipe settings
+mediapipe:
+  static_image_mode: false
+  max_num_hands: 1          # Track single hand (dominant hand)
+  min_detection_confidence: 0.7
+  min_tracking_confidence: 0.5
+  # static_image_mode: false -> VIDEO (smooth tracking, live camera)
+  #                     true  -> IMAGE (independent detection per frame)
+  # The Tasks API selects one hand_landmarker model; there is no Lite/Full
+  # complexity switch, so no model_complexity setting exists.
+
+# Hand geometry (in mm, adjust to your physical hand)
+hand_geometry:
+  finger_segment_lengths:
+    thumb:  [30, 25, 20]    # metacarpal, proximal, distal
+    index:  [40, 25, 20]    # proximal, middle, distal
+    middle: [45, 30, 22]
+    ring:   [42, 27, 20]
+    pinky:  [35, 20, 18]
+
+# Servo motor configuration
+servos:
+  # Each finger has multiple servos (degrees of freedom)
+  # Pin assignments for Arduino
+  # Each value is the Arduino digital pin driving that axis in direct-PWM mode
+  # (DRIVER_MODE 0).  These MUST equal config/hardware_manifest.yaml's `channel`
+  # for the same axis -- the validator compares them.
+  pins:
+    thumb_cmc:  2    # Thumb CMC (flexion/extension)
+    thumb_mcp:  3    # Thumb MCP (abduction/adduction)
+    thumb_ip:   4    # Thumb IP
+    index_mcp:  5    # Index MCP
+    index_pip:  6    # Index PIP
+    middle_mcp: 7    # Middle MCP
+    middle_pip: 8    # Middle PIP
+    ring_mcp:   9    # Ring MCP
+    ring_pip:   10   # Ring PIP
+    pinky_mcp:  11   # Pinky MCP
+    pinky_pip:  12   # Pinky PIP
+    wrist_rot:  13   # Wrist rotation
+
+  # Angle limits (degrees) - safety boundaries
+  angle_limits:
+    min_pulse_us: 500   # Min pulse width for 0 degrees
+    max_pulse_us: 2500  # Max pulse width for 180 degrees
+    min_angle: 0        # Minimum safe angle
+    max_angle: 180      # Maximum safe angle
+    default_angle: 90   # Default/resting position
+
+  # Smoothing
+  smoothing:
+    enabled: true
+    alpha: 0.3           # EMA smoothing factor (lower = smoother)
+    max_step: 5          # Max angle change per frame (degrees)
+
+# Serial communication
+serial:
+  port: "COM5"           # Windows: COM3, Linux: /dev/ttyUSB0, Mac: /dev/cu.usbmodem*
+  baudrate: 115200
+  timeout: 0.1           # Read timeout in seconds
+
+# Simulation mode (when no hardware connected)
+simulation:
+  enabled: true          # Set to false when connecting to real hardware
+  serial_sim: true       # Simulate serial output
+
+# Gesture presets
+# ===============
+# Each named gesture has a target pose (angles dict).  These are used for two
+# things:
+#   1. gesture_driven mode: when a gesture is recognised, the hand is driven
+#      to the preset pose instead of the jittery per-joint raw tracking.
+#      Much crisper motion, especially for the ring/pinky fingers where
+#      MediaPipe is noisier.
+#   2. quick reference for demo / calibration.
+gestures:
+  # Gesture-driven mode: when a gesture is recognised, drive the hand to the
+  # gesture's preset pose instead of the raw tracking.  Crisp, but only has
+  # poses for the gestures defined below.
+  gesture_driven: true
+  # Gesture-assist mode: instead of an on/off switch, each finger is blended
+  # toward its matching preset target by how far it is past the recognition
+  # threshold.  A finger that is clearly extended rides the extended preset
+  # (low noise); a finger in the ambiguous zone stays live.  This gives most of
+  # the stability of gesture_driven while keeping the feel of live tracking.
+  # Takes precedence over gesture_driven when both are on.
+  gesture_assist: true
+  # How strong the assist is at full confidence.  0 = no assist; 1 = fully
+  # snapped to the preset when the threshold is cleared.  Lower = more live
+  # tracking shows through; higher = less jitter but stiffer.
+  assist_strength: 0.6
+  # Time constant, in seconds, of the smoothing applied to the assisted pose.
+  # Smaller follows the hand more closely but passes more of the per-frame
+  # noise through; larger is calmer but lags.
+  assist_smooth_tau: 0.08
+  # How fast the hand eases between live and assisted poses, in degrees per
+  # second per joint.
+  drive_speed_dps: 300.0
+
+  open_hand:
+    description: "Open hand - all fingers extended"
+    angles: {thumb_mcp: 150, thumb_cmc: 140, thumb_ip: 160,
+             index_mcp: 160, index_pip: 170,
+             middle_mcp: 160, middle_pip: 170,
+             ring_mcp: 160, ring_pip: 170,
+             pinky_mcp: 160, pinky_pip: 170, wrist_rot: 90}
+  fist:
+    description: "Fist - all fingers closed"
+    angles: {thumb_mcp: 60, thumb_cmc: 50, thumb_ip: 30,
+             index_mcp: 30, index_pip: 20,
+             middle_mcp: 30, middle_pip: 20,
+             ring_mcp: 30, ring_pip: 20,
+             pinky_mcp: 30, pinky_pip: 20, wrist_rot: 90}
+  pinch:
+    description: "Precision pinch - thumb + index"
+    angles: {thumb_mcp: 80, thumb_cmc: 60, thumb_ip: 40,
+             index_mcp: 50, index_pip: 30,
+             middle_mcp: 160, middle_pip: 170,
+             ring_mcp: 160, ring_pip: 170,
+             pinky_mcp: 160, pinky_pip: 170, wrist_rot: 90}
+  point:
+    description: "Pointing gesture"
+    angles: {thumb_mcp: 60, thumb_cmc: 50, thumb_ip: 30,
+             index_mcp: 160, index_pip: 170,
+             middle_mcp: 30, middle_pip: 20,
+             ring_mcp: 30, ring_pip: 20,
+             pinky_mcp: 30, pinky_pip: 20, wrist_rot: 90}
+
+# Unity 3D pose stream
+# ====================
+# Streams the solved joint angles to a Unity client over UDP so a 3D hand model
+# can mirror the tracked hand.  Unity is only a consumer: the vision, mapping
+# and safety logic stay here, so a Unity client that is closed or not yet
+# written cannot affect the hand.
+#
+# Disabled by default -- it is an extra display, not part of the control path.
+# To test the link without Unity, run:
+#     python tools/unity_pose_test.py listen
+unity:
+  # On by default so `python -m src.main` drives the 3D hand model with no
+  # extra flags.  UDP is fire-and-forget: if no Unity client is listening the
+  # packets are simply dropped and nothing else is affected.
+  # Turn it off per-run with --no-unity.
+  enabled: true
+  host: "127.0.0.1"
+  port: 8888             # must match PoseReceiver.cs
+
+# Hand orientation (front / back / side)
+# =====================================
+# Decided from the signed area of the palm triangle.  That sign flips with the
+# hand, so the handedness must be right or front and back swap silently.
+orientation:
+  # Pin the handedness used for the decision.  MediaPipe occasionally
+  # misclassifies left/right; for a single-operator demo, fixing it removes
+  # that failure mode entirely.  Set to "" to trust the classifier.
+  forced_handedness: "Right"
+  # Flip if calibration shows the answers swapped (depends on whether the
+  # camera image is mirrored).
+  invert_front_back: false
+
+# Logging
+logging:
+  level: "INFO"          # DEBUG, INFO, WARNING, ERROR
+  file: "logs/bionic_hand.log"
