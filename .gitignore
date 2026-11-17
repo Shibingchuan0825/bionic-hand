@@ -77,3 +77,14 @@ Desktop.ini
 # AI 工具配置，不属于项目代码
 /.claude/
 
+# Integrated application: local calibration, outputs and development artifacts.
+joint_bindings.json
+default_home.json
+.deployment/
+备份/
+*.csv
+*.bat
+*.ps1
+*.sh
+tests/
+test_*.py

@@ -81,10 +81,6 @@ def _ensure_mediapipe():
     _HandLandmarkerOptions = _vision_module.HandLandmarkerOptions
     _HandLandmarksConnections = _vision_module.HandLandmarksConnections
 
-    # Monkey-patch: ensure connection tuples are hashable
-    # HandLandmarksConnections is a list of tuples of ints which is fine
-
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -171,7 +167,10 @@ class HandTracker:
     def _get_connections(cls):
         if cls._connections_cache is None:
             _ensure_mediapipe()
-            cls._connections_cache = list(_HandLandmarksConnections)
+            cls._connections_cache = [
+                (connection.start, connection.end)
+                for connection in _HandLandmarksConnections.HAND_CONNECTIONS
+            ]
         return cls._connections_cache
 
     def __init__(
@@ -223,7 +222,11 @@ class HandTracker:
         )
 
         options = _HandLandmarkerOptions(
-            base_options=_BaseOptions(model_asset_path=self.model_path),
+            # Loading through Python supports Chinese Windows paths that the
+            # native MediaPipe file loader cannot open.
+            base_options=_BaseOptions(
+                model_asset_buffer=Path(self.model_path).read_bytes()
+            ),
             running_mode=running_mode,
             num_hands=self.max_num_hands,
             min_hand_detection_confidence=self.min_detection_confidence,

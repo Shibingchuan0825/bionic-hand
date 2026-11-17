@@ -1,0 +1,132 @@
+{
+  "calibrated": false,
+  "model_number": null,
+  "joint_limits_deg": {
+    "index_mcp_flex": [
+      0,
+      40
+    ],
+    "index_mcp_abd": [
+      -15,
+      15
+    ],
+    "index_pip_flex": [
+      0,
+      90
+    ],
+    "index_dip_flex": [
+      0,
+      60
+    ],
+    "thumb_cmc_flex": [
+      0,
+      40
+    ],
+    "thumb_cmc_roll": [
+      -15,
+      15
+    ],
+    "thumb_mcp_flex": [
+      0,
+      40
+    ],
+    "thumb_ip_flex": [
+      0,
+      40
+    ]
+  },
+  "motors": [
+    {
+      "id": 1,
+      "zero_tick": 2048,
+      "min_tick": 1400,
+      "max_tick": 2700,
+      "weights": {
+        "index_mcp_flex": 1,
+        "index_mcp_abd": 1
+      },
+      "current_ma": 250,
+      "speed_rpm": 5
+    },
+    {
+      "id": 2,
+      "zero_tick": 2048,
+      "min_tick": 1400,
+      "max_tick": 2700,
+      "weights": {
+        "index_mcp_flex": 1,
+        "index_mcp_abd": -1
+      },
+      "current_ma": 250,
+      "speed_rpm": 5
+    },
+    {
+      "id": 3,
+      "zero_tick": 2048,
+      "min_tick": 1400,
+      "max_tick": 3072,
+      "weights": {
+        "index_pip_flex": 1
+      },
+      "current_ma": 250,
+      "speed_rpm": 5
+    },
+    {
+      "id": 4,
+      "zero_tick": 2048,
+      "min_tick": 1400,
+      "max_tick": 2731,
+      "weights": {
+        "index_dip_flex": 1
+      },
+      "current_ma": 250,
+      "speed_rpm": 5
+    },
+    {
+      "id": 5,
+      "zero_tick": 2048,
+      "min_tick": 1400,
+      "max_tick": 2700,
+      "weights": {
+        "thumb_cmc_flex": 1,
+        "thumb_cmc_roll": 1
+      },
+      "current_ma": 250,
+      "speed_rpm": 5
+    },
+    {
+      "id": 6,
+      "zero_tick": 2048,
+      "min_tick": 1400,
+      "max_tick": 2700,
+      "weights": {
+        "thumb_cmc_flex": 1,
+        "thumb_cmc_roll": -1
+      },
+      "current_ma": 250,
+      "speed_rpm": 5
+    },
+    {
+      "id": 7,
+      "zero_tick": 2048,
+      "min_tick": 1400,
+      "max_tick": 2700,
+      "weights": {
+        "thumb_mcp_flex": 1
+      },
+      "current_ma": 250,
+      "speed_rpm": 5
+    },
+    {
+      "id": 8,
+      "zero_tick": 2048,
+      "min_tick": 1400,
+      "max_tick": 2700,
+      "weights": {
+        "thumb_ip_flex": 1
+      },
+      "current_ma": 250,
+      "speed_rpm": 5
+    }
+  ]
+}
