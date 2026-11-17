@@ -58,6 +58,7 @@ class VisionControlBridge:
         self.gain = 1.0
         self.message = "等待识别参数"
         self.targets = None
+        self.preview_targets = None
         self.limited = set()
         self.last_valid_at = None
 
@@ -67,6 +68,7 @@ class VisionControlBridge:
                 self.source.invalidate("绑定配置已变更")
             self.config, self.source = config, source
             self.neutral = self.neutral_hand = self.latest = self.targets = None
+            self.preview_targets = None
             self.limited = set()
             self.last_valid_at = None
             self.message = "绑定已加载；请在镜头前采集视觉零姿态"
@@ -82,6 +84,7 @@ class VisionControlBridge:
         with self._lock:
             self.gain = gain
             self.neutral = self.targets = None
+            self.preview_targets = None
             self.source.invalidate("视觉角度比例已变更，请重新采集视觉零姿态")
             self.message = "比例已更新；请重新采集视觉零姿态"
 
@@ -92,11 +95,13 @@ class VisionControlBridge:
             self.neutral, self.neutral_hand = self.latest[0].copy(), self.latest[1]
             self.source.invalidate("视觉零姿态已重新采集")
             self.targets = None
+            self.preview_targets, self.limited = self._map_features(self.latest[0], self.neutral)
             self.message = "视觉零姿态已采集；等待下一帧自动传入控制端"
 
     def tracking_lost(self, reason="未检测到有效人手"):
         with self._lock:
             self.latest = self.targets = None
+            self.preview_targets = None
             self.last_valid_at = None
             self.limited = set()
             self.message = reason
@@ -111,6 +116,8 @@ class VisionControlBridge:
                 # Brief missed detections must not replay old poses. Keep the
                 # input idle for at most 250 ms, then latch a stop for this run.
                 self.latest = self.targets = None
+                self.preview_targets = None
+                self.limited = set()
                 if self.last_valid_at is None or time.monotonic() - self.last_valid_at >= .25:
                     self.tracking_lost()
                 else:
@@ -128,25 +135,19 @@ class VisionControlBridge:
             self.latest = features, handedness, captured_at
             self.last_valid_at = captured_at
             if self.neutral is None:
-                self.message = "已识别到手；请采集视觉零姿态"
+                # A straight finger has an interior angle of 180 degrees.
+                # This reference is for display only; no control frame is sent.
+                self.preview_targets, self.limited = self._map_features(features)
+                self.message = "关节角度已同步预览；实机跟随前请采集视觉零姿态"
                 return
             if handedness != self.neutral_hand:
                 self.neutral = self.neutral_hand = None
                 self.tracking_lost("识别手已切换，请重新采集视觉零姿态")
                 return
-            targets = initial_angles(self.config)
-            limited = set()
-            for joint in self.config.joints.keys() & SUPPORTED_JOINTS:
-                # Old vision uses interior angles (straight ~= 180). The
-                # captured open pose defines robot zero, so flexion is positive.
-                value = (self.neutral[joint] - features[joint]) * self.gain
-                low, high = self.config.joints[joint]
-                target = max(low, min(high, value))
-                if target != value:
-                    limited.add(joint)
-                targets[joint] = round(target, 3)
+            targets, limited = self._map_features(features, self.neutral)
             missing = self.unsupported_bindings()
             self.targets, self.limited = targets, limited
+            self.preview_targets = targets.copy()
             if missing:
                 self.source.invalidate("绑定包含暂无视觉参数的关节：" + ", ".join(missing))
                 self.message = "部分绑定暂无视觉参数，请调整绑定后跟随"
@@ -158,6 +159,19 @@ class VisionControlBridge:
             else:
                 self.message = "视觉角度已自动传入控制端" + (" · 部分关节已限幅" if limited else "")
 
+    def _map_features(self, features, neutral=None):
+        targets = initial_angles(self.config)
+        limited = set()
+        for joint in self.config.joints.keys() & SUPPORTED_JOINTS:
+            reference = neutral[joint] if neutral is not None else 180.0
+            value = (reference - features[joint]) * self.gain
+            low, high = self.config.joints[joint]
+            target = max(low, min(high, value))
+            if target != value:
+                limited.add(joint)
+            targets[joint] = round(target, 3)
+        return targets, limited
+
     def status(self):
         with self._lock:
             return {
@@ -167,6 +181,7 @@ class VisionControlBridge:
                 "captured_at": self.latest[2] if self.latest is not None else None,
                 "hand": self.latest[1] if self.latest is not None else "—",
                 "targets": self.targets.copy() if self.targets is not None else None,
+                "preview_targets": self.preview_targets.copy() if self.preview_targets is not None else None,
                 "limited": self.limited.copy(),
                 "unsupported": self.unsupported_bindings() if self.config is not None else [],
             }

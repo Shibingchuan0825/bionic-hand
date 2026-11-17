@@ -328,12 +328,15 @@ class UnifiedApplication:
     def sync_joint_overview(self, state):
         # Preview is independent of transport acceptance. Even unbound joints
         # or a rejected motor target must remain visible without sending it.
-        targets = state["targets"]
+        targets = state.get("preview_targets", state["targets"])
+        if not self.closing and not self.panel.closed:
+            note = "视觉映射后的关节目标 · 单位 °" if state.get("neutral_ready", True) else "视觉屈曲角度预览 · 未校准 · 单位 °"
+            self.panel.flow_label.configure(text=note)
         if (self.closing or self.panel.closed or targets is None
                 or targets == self.panel.angles):
             return
         self.panel.display_angles(targets)
-        if not self.panel.busy:
+        if not self.panel.busy and state.get("neutral_ready", True):
             self.panel.local_source = "视觉目标预览"
             self.panel.refresh()
 
@@ -444,9 +447,9 @@ class UnifiedApplication:
         else:
             self.home_status.set("默认归位已设置" if self.panel.home_pose is not None else "默认归位：未设置")
         for joint in self.panel.config.joints:
-            targets = state["targets"]
+            targets = state["preview_targets"]
             value = f"{targets[joint]:.1f}" if targets is not None and joint in SUPPORTED_JOINTS else "—"
-            note = "无视觉参数" if joint not in SUPPORTED_JOINTS else "限幅" if joint in state["limited"] else "已接入" if targets else "等待"
+            note = "无视觉参数" if joint not in SUPPORTED_JOINTS else "限幅" if joint in state["limited"] else ("已接入" if state["neutral_ready"] else "预览 · 未校准") if targets else "等待"
             current = self.joint_table.item(joint, "values")
             self.joint_table.item(joint, values=(current[0], value, note))
         idle = not self.panel.busy and not self.closing
